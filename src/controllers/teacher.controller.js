@@ -1,7 +1,10 @@
 const User = require('../models/user.model')
 const bcrypt= require('bcrypt')
 const Teacher= require('../models/teacher.model')
- 
+const Course = require('../models/courses.model');
+const Enrollment = require('../models/enrollment.model');
+const Lesson = require('../models/leason.model');
+const Progress = require('../models/progress.model');
 
 const createTeacher = async (req, res ,next) => {
   try {
@@ -159,6 +162,192 @@ const editTeacherStatus = async (req,res,next)=>{
   }
 }
  
+
+const getTeacherDashboardStats = async (req, res, next) => {
+  try {
+    const teacher = await Teacher.findOne({
+      user: req.user.id
+    });
+
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: 'Teacher profile not found'
+      });
+    }
+
+    const courses = await Course.find({
+      teachers: teacher._id
+    }).select('courseName courseCode status').lean();
+
+    const courseStats = await Promise.all(
+      courses.map(async (course) => {
+        const [
+          totalEnrollments,
+          activeEnrollments,
+          completedEnrollments,
+          totalLessons
+        ] = await Promise.all([
+          Enrollment.countDocuments({
+            course: course._id,
+            status: { $in: ['active', 'completed'] }
+          }),
+          Enrollment.countDocuments({
+            course: course._id,
+            status: 'active'
+          }),
+          Enrollment.countDocuments({
+            course: course._id,
+            status: 'completed'
+          }),
+          Lesson.countDocuments({ course: course._id })
+        ]);
+
+        return {
+          courseId: course._id,
+          courseName: course.courseName,
+          courseCode: course.courseCode,
+          status: course.status,
+          totalEnrollments,
+          activeEnrollments,
+          completedEnrollments,
+          totalLessons
+        };
+      })
+    );
+
+    const totalStudents = await Enrollment.distinct('student', {
+      course: { $in: courses.map((course) => course._id) },
+      status: { $in: ['active', 'completed'] }
+    });
+
+    res.status(200).json({
+      success: true,
+      stats: {
+        totalCourses: courses.length,
+        activeCourses: courses.filter(
+          (course) => course.status === 'active'
+        ).length,
+        totalStudents: totalStudents.length,
+        totalEnrollments: courseStats.reduce(
+          (sum, course) => sum + course.totalEnrollments,
+          0
+        )
+      },
+      courses: courseStats
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+const getMyTeacherProfile = async (req, res, next) => {
+  try {
+    const teacher = await Teacher.findOne({ user: req.user.id })
+      .select('-__v')
+      .populate(
+        'user',
+        'firstName lastName email phone age address status role'
+      );
+
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: 'Teacher profile not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      teacher
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const updateMyTeacherProfile = async (req, res, next) => {
+  try {
+    const allowedUserFields = [
+      'firstName',
+      'lastName',
+      'phone',
+      'age',
+      'address'
+    ];
+
+    const allowedTeacherFields = [
+      'specialization',
+      'qualification',
+      'experienceYears'
+    ];
+
+    const userUpdates = {};
+    const teacherUpdates = {};
+
+    for (const field of allowedUserFields) {
+      if (req.body[field] !== undefined) {
+        userUpdates[field] = req.body[field];
+      }
+    }
+
+    for (const field of allowedTeacherFields) {
+      if (req.body[field] !== undefined) {
+        teacherUpdates[field] = req.body[field];
+      }
+    }
+
+    if (
+      Object.keys(userUpdates).length === 0 &&
+      Object.keys(teacherUpdates).length === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid profile fields provided'
+      });
+    }
+
+    const teacher = await Teacher.findOne({ user: req.user.id });
+
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: 'Teacher profile not found'
+      });
+    }
+
+    if (Object.keys(userUpdates).length > 0) {
+      await User.findByIdAndUpdate(
+        req.user.id,
+        { $set: userUpdates },
+        { runValidators: true }
+      );
+    }
+
+    if (Object.keys(teacherUpdates).length > 0) {
+      Object.assign(teacher, teacherUpdates);
+      await teacher.save();
+    }
+
+    const updatedTeacher = await Teacher.findById(teacher._id)
+      .select('-__v')
+      .populate(
+        'user',
+        'firstName lastName email phone age address status role'
+      );
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      teacher: updatedTeacher
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports ={createTeacher, 
   getTeachers,getTeacherById ,editTeacherById
-,editTeacherStatus}
+,editTeacherStatus,getTeacherDashboardStats,
+getMyTeacherProfile,updateMyTeacherProfile}

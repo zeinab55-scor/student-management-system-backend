@@ -1,7 +1,10 @@
  const User = require('../models/user.model')
  const Student = require('../models/student.model')
  const bcrypt= require('bcrypt');
- 
+ const Enrollment = require('../models/enrollment.model');
+const Lesson = require('../models/leason.model');
+const Progress = require('../models/progress.model');
+
  const createStudent =async (req,res,next)=>{
      try {
           const {studentId,firstName,lastName,email,password,phone,
@@ -140,6 +143,188 @@ const getStudents = async (req, res, next) => {
      next(error)
    }
  }
+ 
+const getStudentDashboardStats = async (req, res, next) => {
+  try {
+    const student = await Student.findOne({ user: req.user.id });
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student profile not found'
+      });
+    }
+
+    const enrollments = await Enrollment.find({
+      student: student._id,
+      status: { $in: ['active', 'completed'] }
+    }).populate('course');
+
+    const courses = await Promise.all(
+      enrollments
+        .filter(enrollment => enrollment.course)
+        .map(async enrollment => {
+          const course = enrollment.course;
+
+          const [totalLessons, completedLessons] = await Promise.all([
+            Lesson.countDocuments({ course: course._id }),
+            Progress.countDocuments({
+              enrollment: enrollment._id,
+              status: 'completed'
+            })
+          ]);
+
+          const progressPercentage = totalLessons > 0
+            ? Math.round((completedLessons / totalLessons) * 100)
+            : 0;
+
+          return {
+            enrollmentId: enrollment._id,
+            courseId: course._id,
+            courseName: course.courseName,
+            thumbnail: course.thumbnail,
+            enrollmentStatus: enrollment.status,
+            totalLessons,
+            completedLessons,
+            progressPercentage
+          };
+        })
+    );
+
+    const activeEnrollments = enrollments.filter(
+      enrollment => enrollment.status === 'active'
+    ).length;
+
+    const completedEnrollments = enrollments.filter(
+      enrollment => enrollment.status === 'completed'
+    ).length;
+
+    const totalCompletedLessons = courses.reduce(
+      (total, course) => total + course.completedLessons,
+      0
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Student dashboard statistics retrieved successfully',
+      stats: {
+        totalCourses: enrollments.length,
+        activeCourses: activeEnrollments,
+        completedCourses: completedEnrollments,
+        totalCompletedLessons,
+        courses
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getMyStudentProfile = async (req, res, next) => {
+  try {
+    const student = await Student.findOne({ user: req.user.id })
+      .select('-__v')
+      .populate(
+        'user',
+        'firstName lastName email phone age address status role'
+      );
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student profile not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      student
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const updateMyStudentProfile = async (req, res, next) => {
+  try {
+    const allowedUserFields = [
+      'firstName',
+      'lastName',
+      'phone',
+      'age',
+      'address'
+    ];
+
+    const allowedStudentFields = [
+      'dateOfBirth',
+      'gender'
+    ];
+
+    const userUpdates = {};
+    const studentUpdates = {};
+
+    for (const field of allowedUserFields) {
+      if (req.body[field] !== undefined) {
+        userUpdates[field] = req.body[field];
+      }
+    }
+
+    for (const field of allowedStudentFields) {
+      if (req.body[field] !== undefined) {
+        studentUpdates[field] = req.body[field];
+      }
+    }
+
+    if (
+      Object.keys(userUpdates).length === 0 &&
+      Object.keys(studentUpdates).length === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid profile fields provided'
+      });
+    }
+
+    const student = await Student.findOne({ user: req.user.id });
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student profile not found'
+      });
+    }
+
+    if (Object.keys(userUpdates).length > 0) {
+      await User.findByIdAndUpdate(
+        req.user.id,
+        { $set: userUpdates },
+        { runValidators: true }
+      );
+    }
+
+    if (Object.keys(studentUpdates).length > 0) {
+      Object.assign(student, studentUpdates);
+      await student.save();
+    }
+
+    const updatedStudent = await Student.findById(student._id)
+      .select('-__v')
+      .populate(
+        'user',
+        'firstName lastName email phone age address status role'
+      );
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      student: updatedStudent
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
  module.exports={createStudent,getStudents,getStudentById
-    ,editStudentById,editStudentStatus
+    ,editStudentById,editStudentStatus,getStudentDashboardStats
+    ,getMyStudentProfile,updateMyStudentProfile
  }

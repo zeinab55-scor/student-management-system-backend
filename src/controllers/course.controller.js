@@ -75,27 +75,71 @@ const createCourse = async (req,res,next)=>{
     }
 }
 
-const getCourses = async (req, res, next) => {
+
+const getAllCourses = async (req, res, next) => {
   try {
-    const courses = await Course.find()
-      .populate({
-        path: 'teachers',
-        populate: {
-          path: 'user',
-          select: 'firstName lastName'
-        }
-      });
+    const {
+      search,
+      category,
+      level,
+      status,
+      page = 1,
+      limit = 10
+    } = req.query;
+
+    const currentPage = Math.max(1, parseInt(page, 10) || 1);
+    const pageSize = Math.min(
+      50,
+      Math.max(1, parseInt(limit, 10) || 10)
+    );
+
+    const filter = {};
+
+    // Search by course name or code
+    if (search && search.trim()) {
+      const escapedSearch = search.trim().replace(
+        /[.*+?^${}()|[\]\\]/g,
+        '\\$&'
+      );
+
+      filter.$or = [
+        { courseName: { $regex: escapedSearch, $options: 'i' } },
+        { courseCode: { $regex: escapedSearch, $options: 'i' } }
+      ];
+    }
+
+    if (category) {
+      filter.category = category;
+    }
+
+    if (level) {
+      filter.level = level;
+    }
+
+    // Public users see active courses only
+    filter.status = 'active';
+
+    const [courses, totalCourses] = await Promise.all([
+      Course.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((currentPage - 1) * pageSize)
+        .limit(pageSize),
+      Course.countDocuments(filter)
+    ]);
 
     res.status(200).json({
       success: true,
       count: courses.length,
+      totalCourses,
+      currentPage,
+      totalPages: Math.ceil(totalCourses / pageSize),
       courses
     });
-
   } catch (error) {
     next(error);
   }
 };
+
 
 const getCourseById =async (req,res,next)=>{
 try {
@@ -197,6 +241,6 @@ const editCourseStatus = async (req,res,next)=>{
     next(error)
   }
 }
-module.exports ={createCourse,getCourses,getCourseById,
+module.exports ={createCourse,getAllCourses,getCourseById,
   updateCourseById,editCourseStatus
 }
