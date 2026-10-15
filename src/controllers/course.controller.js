@@ -241,6 +241,22 @@ const editCourseStatus = async (req,res,next)=>{
     next(error)
   }
 }
+const getCourseFilters = async (req, res, next) => {
+  try {
+    const [categories, levels] = await Promise.all([
+      Course.distinct('category', { status: 'active' }),
+      Course.distinct('level', { status: 'active' })
+    ]);
+
+    res.status(200).json({
+      success: true,
+      categories: categories.filter(Boolean).sort(),
+      levels: levels.filter(Boolean).sort()
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 module.exports ={createCourse,getAllCourses,getCourseById,
-  updateCourseById,editCourseStatus
+  updateCourseById,editCourseStatus,getCourseFilters
 }

@@ -6,8 +6,7 @@ const registerStudent = async (req, res,next) => {
   try {
 
     const {
-     studentId,
-      firstName,
+     firstName,
       lastName,
       email,
       password,
@@ -20,7 +19,6 @@ const registerStudent = async (req, res,next) => {
 
     // Check required fields
     if (
-      !studentId ||
       !firstName ||
       !lastName ||
       !email ||
@@ -45,15 +43,7 @@ const registerStudent = async (req, res,next) => {
       });
     }
 
-    // Check student ID
-    const existingStudent = await Student.findOne({ studentId });
-
-    if (existingStudent) {
-      return res.status(409).json({
-        success: false,
-        message: 'Student ID already exists'
-      });
-    }
+    
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -69,7 +59,7 @@ const registerStudent = async (req, res,next) => {
       address,
       role: 'student'
     });
-
+const studentId = `STU-${newUser._id.toString()}`;
     // Create Student
     const newStudent = await Student.create({
        user: newUser._id,
