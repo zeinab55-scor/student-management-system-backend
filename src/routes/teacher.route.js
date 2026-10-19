@@ -3,7 +3,7 @@ const router = express.Router()
 const { createTeacher  ,
      editTeacherById,getTeachers,getTeacherById
     ,editTeacherStatus ,getTeacherDashboardStats
-    ,getMyTeacherProfile,updateMyTeacherProfile
+    ,getMyTeacherProfile,updateMyTeacherProfile,getMyStudents
 }= require("../controllers/teacher.controller")
 const authMiddleware = require('../middleware/authMiddleware')
 const roleMiddleware = require('../middleware/roleMiddleware')
@@ -32,6 +32,13 @@ router.put(
   authMiddleware,
   roleMiddleware('teacher'),
   updateMyTeacherProfile
+);
+
+router.get(
+  '/me/students',
+  authMiddleware,
+  roleMiddleware('teacher'),
+  getMyStudents
 );
 
 module.exports = router

@@ -347,7 +347,72 @@ const updateMyTeacherProfile = async (req, res, next) => {
   }
 };
 
+
+const getMyStudents = async (req, res, next) => {
+  try {
+    const teacher = await Teacher.findOne({ user: req.user.id });
+
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: 'Teacher profile not found'
+      });
+    }
+
+    const courses = await Course.find({
+      teachers: teacher._id
+    }).select('_id courseName courseCode').lean();
+
+    const courseIds = courses.map((course) => course._id);
+
+    const enrollments = await Enrollment.find({
+      course: { $in: courseIds },
+      status: { $in: ['active', 'completed'] }
+    })
+      .populate({
+        path: 'student',
+        select: 'studentId user',
+        populate: {
+          path: 'user',
+          select: 'firstName lastName email phone status'
+        }
+      })
+      .populate({
+        path: 'course',
+        select: 'courseName courseCode'
+      })
+      .sort({ enrolledAt: -1 })
+      .lean();
+
+    const students = enrollments
+      .filter((enrollment) => enrollment.student?.user)
+      .map((enrollment) => ({
+        enrollmentId: enrollment._id,
+        studentId: enrollment.student._id,
+        studentCode: enrollment.student.studentId,
+        firstName: enrollment.student.user.firstName,
+        lastName: enrollment.student.user.lastName,
+        email: enrollment.student.user.email,
+        phone: enrollment.student.user.phone,
+        accountStatus: enrollment.student.user.status,
+        courseId: enrollment.course?._id,
+        courseName: enrollment.course?.courseName,
+        courseCode: enrollment.course?.courseCode,
+        enrollmentStatus: enrollment.status,
+        enrolledAt: enrollment.enrolledAt
+      }));
+
+    res.status(200).json({
+      success: true,
+      count: students.length,
+      students
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports ={createTeacher, 
   getTeachers,getTeacherById ,editTeacherById
 ,editTeacherStatus,getTeacherDashboardStats,
-getMyTeacherProfile,updateMyTeacherProfile}
+getMyTeacherProfile,updateMyTeacherProfile ,getMyStudents}
